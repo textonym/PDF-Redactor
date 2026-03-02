@@ -145,6 +145,7 @@ let totalPages = 0;
 let scale = 1.5;
 let redactions = []; // { page, x, y, w, h } in PDF coords (unscaled)
 let pdfBytes = null;
+let originalFilename = 'document';
 let drawing = false;
 let startX, startY;
 let tempRect = null;
@@ -175,6 +176,7 @@ fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
 async function handleFile(file) {
   if (!file || file.type !== 'application/pdf') return;
   pdfBytes = await file.arrayBuffer();
+  originalFilename = file.name.replace(/\.pdf$/i, '');
   pdfDoc = await pdfjsLib.getDocument({ data: pdfBytes.slice(0) }).promise;
   totalPages = pdfDoc.numPages;
   currentPage = 1;
@@ -366,10 +368,10 @@ document.getElementById('exportBtn').addEventListener('click', async () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'redacted.pdf';
+    a.download = `${originalFilename}_redacted.pdf`;
     a.click();
     URL.revokeObjectURL(url);
-    showStatus('✓ Redacted PDF downloaded!');
+    showStatus(`✓ Downloaded: ${originalFilename}_redacted.pdf`);
   } catch(err) {
     console.error(err);
     showStatus('Error exporting PDF');
