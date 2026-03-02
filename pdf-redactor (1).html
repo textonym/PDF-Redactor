@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF Redactor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; min-height: 100vh; }
+  header { background: #16213e; padding: 16px 24px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid #0f3460; }
+  header h1 { font-size: 20px; font-weight: 700; color: #e94560; }
+  header span { font-size: 13px; color: #888; }
+  #app { display: flex; height: calc(100vh - 57px); }
+  #sidebar { width: 260px; background: #16213e; border-right: 1px solid #0f3460; display: flex; flex-direction: column; padding: 16px; gap: 12px; overflow-y: auto; flex-shrink: 0; }
+  .upload-zone { border: 2px dashed #0f3460; border-radius: 10px; padding: 24px 16px; text-align: center; cursor: pointer; transition: all 0.2s; }
+  .upload-zone:hover, .upload-zone.drag-over { border-color: #e94560; background: rgba(233, 69, 96, 0.05); }
+  .upload-zone svg { margin-bottom: 8px; opacity: 0.6; }
+  .upload-zone p { font-size: 13px; color: #888; }
+  .upload-zone strong { color: #e94560; }
+  #fileInput { display: none; }
+  .section-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #555; margin-top: 8px; }
+  .page-nav { display: flex; align-items: center; gap: 8px; }
+  .page-nav button { background: #0f3460; border: none; color: #e0e0e0; width: 30px; height: 30px; border-radius: 6px; cursor: pointer; font-size: 16px; transition: background 0.15s; }
+  .page-nav button:hover:not(:disabled) { background: #e94560; }
+  .page-nav button:disabled { opacity: 0.3; cursor: not-allowed; }
+  .page-nav span { flex: 1; text-align: center; font-size: 13px; color: #aaa; }
+  .zoom-controls { display: flex; align-items: center; gap: 8px; }
+  .zoom-controls button { background: #0f3460; border: none; color: #e0e0e0; width: 30px; height: 30px; border-radius: 6px; cursor: pointer; font-size: 16px; transition: background 0.15s; }
+  .zoom-controls button:hover { background: #e94560; }
+  .zoom-controls span { flex: 1; text-align: center; font-size: 13px; color: #aaa; }
+  .redaction-list { display: flex; flex-direction: column; gap: 6px; }
+  .redaction-item { background: #0f3460; border-radius: 8px; padding: 8px 10px; font-size: 12px; display: flex; align-items: center; justify-content: space-between; }
+  .redaction-item .label { color: #aaa; }
+  .redaction-item button { background: none; border: none; color: #e94560; cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px; }
+  .redaction-item button:hover { color: #ff6b6b; }
+  .empty-state { font-size: 12px; color: #444; text-align: center; padding: 12px 0; }
+  .btn { border: none; border-radius: 8px; padding: 10px 16px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; width: 100%; }
+  .btn-primary { background: #e94560; color: white; }
+  .btn-primary:hover:not(:disabled) { background: #c73652; }
+  .btn-secondary { background: #0f3460; color: #e0e0e0; }
+  .btn-secondary:hover:not(:disabled) { background: #1a4a80; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  #main { flex: 1; overflow: auto; display: flex; flex-direction: column; align-items: center; padding: 24px; }
+  #canvas-container { position: relative; user-select: none; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+  #pdf-canvas { display: block; }
+  #overlay-svg { position: absolute; top: 0; left: 0; pointer-events: none; }
+  #draw-canvas { position: absolute; top: 0; left: 0; cursor: crosshair; }
+  .hint { font-size: 12px; color: #555; text-align: center; margin-top: 12px; }
+  .mode-toggle { display: flex; border-radius: 8px; overflow: hidden; border: 1px solid #0f3460; }
+  .mode-btn { flex: 1; padding: 8px; background: none; border: none; font-size: 12px; color: #888; cursor: pointer; transition: all 0.15s; }
+  .mode-btn.active { background: #e94560; color: white; font-weight: 600; }
+  #status-bar { position: fixed; bottom: 16px; right: 16px; background: #16213e; border: 1px solid #0f3460; border-radius: 8px; padding: 8px 14px; font-size: 12px; color: #aaa; display: none; z-index: 100; }
+  #status-bar.show { display: block; }
+  .progress-wrap { display: none; flex-direction: column; gap: 6px; }
+  .progress-wrap.show { display: flex; }
+  .progress-bar-bg { background: #0f3460; border-radius: 4px; height: 6px; overflow: hidden; }
+  .progress-bar-fill { background: #e94560; height: 100%; width: 0%; transition: width 0.2s; border-radius: 4px; }
+  .progress-label { font-size: 11px; color: #555; text-align: center; }
+  .badge { display: inline-block; background: #e94560; color: white; font-size: 9px; font-weight: 700; padding: 2px 5px; border-radius: 4px; vertical-align: middle; margin-left: 4px; letter-spacing: 0.05em; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⬛ PDF Redactor</h1>
+  <span>Draw boxes to redact · exported PDF is fully flattened — no text layer</span>
+</header>
+
+<div id="app">
+  <div id="sidebar">
+    <div class="upload-zone" id="uploadZone">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#e94560" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+      <p><strong>Click or drop</strong> a PDF here</p>
+      <p>to get started</p>
+    </div>
+    <input type="file" id="fileInput" accept=".pdf">
+
+    <div class="section-title">Page</div>
+    <div class="page-nav">
+      <button id="prevPage">‹</button>
+      <span id="pageInfo">— / —</span>
+      <button id="nextPage">›</button>
+    </div>
+
+    <div class="section-title">Zoom</div>
+    <div class="zoom-controls">
+      <button id="zoomOut">−</button>
+      <span id="zoomInfo">100%</span>
+      <button id="zoomIn">+</button>
+    </div>
+
+    <div class="section-title">Mode</div>
+    <div class="mode-toggle">
+      <button class="mode-btn active" id="modeRedact">Redact</button>
+      <button class="mode-btn" id="modeView">View</button>
+    </div>
+
+    <div class="section-title">Redactions (<span id="redactionCount">0</span>)</div>
+    <div class="redaction-list" id="redactionList">
+      <p class="empty-state">No redactions yet.<br>Draw boxes on the PDF.</p>
+    </div>
+
+    <button class="btn btn-secondary" id="clearAll" disabled>Clear All</button>
+    <button class="btn btn-primary" id="exportBtn" disabled>Export Redacted PDF</button>
+
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
+      <div class="progress-label" id="progressLabel">Processing…</div>
+    </div>
+
+    <div style="margin-top:4px; padding: 10px; background:#0a1628; border-radius:8px; font-size:11px; color:#444; line-height:1.5;">
+      <span class="badge">SECURE</span> Export flattens all pages to images — <strong style="color:#555">no text layer, no metadata</strong> in the output file.
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="canvas-container" style="display:none">
+      <canvas id="pdf-canvas"></canvas>
+      <svg id="overlay-svg"></svg>
+      <canvas id="draw-canvas"></canvas>
+    </div>
+    <div id="placeholder" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#333;gap:16px;">
+      <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+      <p style="font-size:15px">Upload a PDF to start redacting</p>
+    </div>
+    <p class="hint" id="hint" style="display:none">Click and drag to draw a redaction box · Right-click a box to remove it</p>
+  </div>
+</div>
+
+<div id="status-bar"></div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+let pdfDoc = null;
+let currentPage = 1;
+let totalPages = 0;
+let scale = 1.5;
+let redactions = [];
+let pdfBytes = null;
+let originalFilename = 'document';
+let drawing = false;
+let startX, startY;
+let mode = 'redact';
+
+const canvas = document.getElementById('pdf-canvas');
+const ctx = canvas.getContext('2d');
+const svg = document.getElementById('overlay-svg');
+const drawCanvas = document.getElementById('draw-canvas');
+const drawCtx = drawCanvas.getContext('2d');
+
+function showStatus(msg, duration = 2500) {
+  const bar = document.getElementById('status-bar');
+  bar.textContent = msg;
+  bar.classList.add('show');
+  clearTimeout(bar._t);
+  bar._t = setTimeout(() => bar.classList.remove('show'), duration);
+}
+
+function setProgress(pct, label) {
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressLabel').textContent = label;
+}
+
+// Upload
+const uploadZone = document.getElementById('uploadZone');
+const fileInput = document.getElementById('fileInput');
+uploadZone.addEventListener('click', () => fileInput.click());
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classList.remove('drag-over'); handleFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
+
+async function handleFile(file) {
+  if (!file || file.type !== 'application/pdf') return;
+  originalFilename = file.name.replace(/\.pdf$/i, '');
+  pdfBytes = await file.arrayBuffer();
+  pdfDoc = await pdfjsLib.getDocument({ data: pdfBytes.slice(0) }).promise;
+  totalPages = pdfDoc.numPages;
+  currentPage = 1;
+  redactions = [];
+  document.getElementById('placeholder').style.display = 'none';
+  document.getElementById('canvas-container').style.display = 'block';
+  document.getElementById('hint').style.display = 'block';
+  updateNav();
+  renderPage();
+  renderRedactionList();
+}
+
+async function renderPage() {
+  const page = await pdfDoc.getPage(currentPage);
+  const viewport = page.getViewport({ scale });
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  drawCanvas.width = viewport.width;
+  drawCanvas.height = viewport.height;
+  svg.setAttribute('width', viewport.width);
+  svg.setAttribute('height', viewport.height);
+  svg.setAttribute('viewBox', `0 0 ${viewport.width} ${viewport.height}`);
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  renderRedactionOverlay();
+}
+
+function renderRedactionOverlay() {
+  svg.innerHTML = '';
+  redactions.filter(r => r.page === currentPage).forEach(r => {
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', r.x * scale);
+    rect.setAttribute('y', r.y * scale);
+    rect.setAttribute('width', r.w * scale);
+    rect.setAttribute('height', r.h * scale);
+    rect.setAttribute('fill', '#000');
+    rect.setAttribute('stroke', '#e94560');
+    rect.setAttribute('stroke-width', '1.5');
+    rect.style.cursor = 'pointer';
+    rect.style.pointerEvents = 'all';
+    const idx = redactions.indexOf(r);
+    rect.addEventListener('contextmenu', e => { e.preventDefault(); removeRedaction(idx); });
+    rect.addEventListener('click', () => { if (mode === 'view') removeRedaction(idx); });
+    svg.appendChild(rect);
+
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', r.x * scale + 4);
+    text.setAttribute('y', r.y * scale + 14);
+    text.setAttribute('fill', '#e94560');
+    text.setAttribute('font-size', '10');
+    text.setAttribute('font-family', 'monospace');
+    text.textContent = `P${r.page}`;
+    text.style.pointerEvents = 'none';
+    svg.appendChild(text);
+  });
+}
+
+// Drawing
+drawCanvas.addEventListener('mousedown', e => {
+  if (mode !== 'redact') return;
+  drawing = true;
+  const r = drawCanvas.getBoundingClientRect();
+  startX = e.clientX - r.left;
+  startY = e.clientY - r.top;
+});
+
+drawCanvas.addEventListener('mousemove', e => {
+  if (!drawing) return;
+  const r = drawCanvas.getBoundingClientRect();
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+  drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+  drawCtx.fillStyle = 'rgba(0,0,0,0.75)';
+  drawCtx.strokeStyle = '#e94560';
+  drawCtx.lineWidth = 2;
+  drawCtx.fillRect(startX, startY, x - startX, y - startY);
+  drawCtx.strokeRect(startX, startY, x - startX, y - startY);
+});
+
+drawCanvas.addEventListener('mouseup', e => {
+  if (!drawing) return;
+  drawing = false;
+  const r = drawCanvas.getBoundingClientRect();
+  const endX = e.clientX - r.left, endY = e.clientY - r.top;
+  drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+  const x = Math.min(startX, endX) / scale;
+  const y = Math.min(startY, endY) / scale;
+  const w = Math.abs(endX - startX) / scale;
+  const h = Math.abs(endY - startY) / scale;
+  if (w < 5 || h < 5) return;
+  redactions.push({ page: currentPage, x, y, w, h });
+  renderRedactionOverlay();
+  renderRedactionList();
+  document.getElementById('exportBtn').disabled = false;
+  document.getElementById('clearAll').disabled = false;
+  showStatus(`Redaction added (Page ${currentPage})`);
+});
+
+drawCanvas.addEventListener('mouseleave', () => {
+  if (drawing) { drawing = false; drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height); }
+});
+
+function removeRedaction(idx) {
+  redactions.splice(idx, 1);
+  renderRedactionOverlay();
+  renderRedactionList();
+  if (redactions.length === 0) {
+    document.getElementById('exportBtn').disabled = true;
+    document.getElementById('clearAll').disabled = true;
+  }
+  showStatus('Redaction removed');
+}
+
+function renderRedactionList() {
+  const list = document.getElementById('redactionList');
+  document.getElementById('redactionCount').textContent = redactions.length;
+  if (redactions.length === 0) {
+    list.innerHTML = '<p class="empty-state">No redactions yet.<br>Draw boxes on the PDF.</p>';
+    return;
+  }
+  list.innerHTML = redactions.map((r, i) => `
+    <div class="redaction-item">
+      <span class="label">P${r.page} · ${Math.round(r.w)}×${Math.round(r.h)}</span>
+      <button onclick="removeRedaction(${i})" title="Remove">×</button>
+    </div>
+  `).join('');
+}
+
+// Navigation
+document.getElementById('prevPage').addEventListener('click', () => { if (currentPage > 1) { currentPage--; updateNav(); renderPage(); } });
+document.getElementById('nextPage').addEventListener('click', () => { if (currentPage < totalPages) { currentPage++; updateNav(); renderPage(); } });
+function updateNav() {
+  document.getElementById('pageInfo').textContent = `${currentPage} / ${totalPages}`;
+  document.getElementById('prevPage').disabled = currentPage === 1;
+  document.getElementById('nextPage').disabled = currentPage === totalPages;
+}
+
+// Zoom
+document.getElementById('zoomIn').addEventListener('click', () => { scale = Math.min(scale + 0.25, 4); document.getElementById('zoomInfo').textContent = Math.round(scale / 1.5 * 100) + '%'; if (pdfDoc) renderPage(); });
+document.getElementById('zoomOut').addEventListener('click', () => { scale = Math.max(scale - 0.25, 0.5); document.getElementById('zoomInfo').textContent = Math.round(scale / 1.5 * 100) + '%'; if (pdfDoc) renderPage(); });
+
+// Mode
+document.getElementById('modeRedact').addEventListener('click', () => { mode = 'redact'; document.getElementById('modeRedact').classList.add('active'); document.getElementById('modeView').classList.remove('active'); drawCanvas.style.pointerEvents = ''; drawCanvas.style.cursor = 'crosshair'; });
+document.getElementById('modeView').addEventListener('click', () => { mode = 'view'; document.getElementById('modeView').classList.add('active'); document.getElementById('modeRedact').classList.remove('active'); drawCanvas.style.pointerEvents = 'none'; drawCanvas.style.cursor = 'default'; });
+
+// Clear all
+document.getElementById('clearAll').addEventListener('click', () => {
+  redactions = []; renderRedactionOverlay(); renderRedactionList();
+  document.getElementById('exportBtn').disabled = true;
+  document.getElementById('clearAll').disabled = true;
+});
+
+// ─── EXPORT: flatten all pages to images, burn redactions in ───────────────
+document.getElementById('exportBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('exportBtn');
+  btn.disabled = true;
+  btn.textContent = 'Processing…';
+  const progressWrap = document.getElementById('progressWrap');
+  progressWrap.classList.add('show');
+  setProgress(0, 'Starting…');
+
+  try {
+    const { PDFDocument } = PDFLib;
+    const outDoc = await PDFDocument.create();
+
+    // High-res render scale for export (2x for crisp output)
+    const exportScale = 2.0;
+
+    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+      const pct = Math.round(((pageNum - 1) / totalPages) * 90);
+      setProgress(pct, `Flattening page ${pageNum} of ${totalPages}…`);
+
+      const page = await pdfDoc.getPage(pageNum);
+      const viewport = page.getViewport({ scale: exportScale });
+
+      // Render page to offscreen canvas
+      const offscreen = document.createElement('canvas');
+      offscreen.width = viewport.width;
+      offscreen.height = viewport.height;
+      const offCtx = offscreen.getContext('2d');
+      await page.render({ canvasContext: offCtx, viewport }).promise;
+
+      // Paint redaction boxes directly onto the canvas (burns them in)
+      const pageReds = redactions.filter(r => r.page === pageNum);
+      offCtx.fillStyle = '#000000';
+      for (const r of pageReds) {
+        offCtx.fillRect(r.x * exportScale, r.y * exportScale, r.w * exportScale, r.h * exportScale);
+      }
+
+      // Convert canvas to PNG and embed in new PDF
+      const imgDataUrl = offscreen.toDataURL('image/png');
+      const imgBytes = Uint8Array.from(atob(imgDataUrl.split(',')[1]), c => c.charCodeAt(0));
+      const pngImage = await outDoc.embedPng(imgBytes);
+
+      // Add page at original PDF dimensions
+      const { width, height } = page.getViewport({ scale: 1 });
+      const outPage = outDoc.addPage([width, height]);
+      outPage.drawImage(pngImage, { x: 0, y: 0, width, height });
+
+      // Yield to keep UI responsive
+      await new Promise(r => setTimeout(r, 0));
+    }
+
+    setProgress(95, 'Saving PDF…');
+    const bytes = await outDoc.save();
+    setProgress(100, 'Done!');
+
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${originalFilename}_redacted.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showStatus(`✓ Downloaded: ${originalFilename}_redacted.pdf`);
+
+  } catch (err) {
+    console.error(err);
+    showStatus('Error during export: ' + err.message, 5000);
+    setProgress(0, 'Error');
+  }
+
+  setTimeout(() => progressWrap.classList.remove('show'), 2000);
+  btn.disabled = false;
+  btn.textContent = 'Export Redacted PDF';
+});
+</script>
+</body>
+</html>
