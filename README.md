@@ -4,7 +4,7 @@ markdown
 
 A fully client-side PDF redaction tool — no uploads, no server, no data leaves your browser.
 
-🔗 **[Live Demo](https://textonym.github.io/pdf-redactor)**
+🔗 **[Live Demo](https://textonym.github.io/PDF-Redactor)**
 
 <img width="910" height="646" alt="image" src="https://github.com/user-attachments/assets/8feedfd8-034c-42b2-99f6-24d6c1784968" />
 
